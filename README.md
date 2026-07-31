@@ -1,60 +1,100 @@
 # Matrix Stencil
 
-A reusable .NET 8 console animation that renders layered Matrix-style rain through a dark message stencil.
+A reusable .NET 8 console animation that renders layered Matrix-style rain around a hidden message stencil.
 
-The hard-coded message is currently `HELLO WORLD`, but the core renderer accepts any short message made from printable ASCII characters.
+The current message is `HELLO WORLD`, an inside joke, but the renderer supports any short message made from printable ASCII characters.
 
-## Visual model
+## How it works
 
-The scene has three independent rain layers:
+The animation runs as an endless heat cycle.
 
-- **Far layer:** always active, slow, sparse, and barely visible.
-- **Middle layer:** enters gradually from the top during warm-up and drains naturally through the bottom during cool-down.
-- **Foreground layer:** enters later with brighter characters and sparse highlight heads. Highlights mature only after a stream has traveled several rows.
+It begins with a sparse, distant Matrix layer. Additional layers gradually enter from the top of the terminal, increasing the density and brightness of the scene until the hidden message becomes visible.
 
-The message is always present as a stencil. Characters are not erased inside it. Instead, middle and foreground characters are demoted to distant intensities as they pass behind the stencil. This leaves subtle motion inside the letters while the hotter surrounding Matrix rain reveals the phrase by contrast.
+When the animation cools, new streams stop entering. Existing characters continue falling until they naturally leave the bottom of the terminal.
 
-## Projects
+Nothing abruptly fades in or disappears.
+
+## Matrix layers
+
+The scene contains three independent rain layers.
+
+### Far layer
+
+The far layer is always active.
+
+It is:
+
+- Slow
+- Sparse
+- Dim
+- Visually stable
+- Visible both inside and outside the message stencil
+
+This layer provides background depth and keeps the screen from becoming completely empty during the cold portion of the cycle.
+
+### Middle layer
+
+The middle layer begins entering during warm-up.
+
+It adds:
+
+- Moderate density
+- Muted green trails
+- Occasional brighter characters
+- Additional depth behind the foreground rain
+
+When cooling begins, the middle layer stops producing new streams. Existing streams continue falling until they leave the screen.
+
+### Foreground layer
+
+The foreground layer enters later in the heat cycle.
+
+It contains:
+
+- Brighter Matrix characters
+- Highlighted stream heads
+- Sparse high-intensity characters
+- Faster and more visually prominent trails
+
+Foreground highlights do not immediately appear when a stream enters the screen. They mature after the stream has traveled several rows.
+
+## Message stencil
+
+The message is always present, even when it is difficult to see.
+
+Matrix characters inside the stencil are pushed back to the far-layer intensity. Characters near the stencil edges are promoted to brighter intensities, allowing the surrounding Matrix rain to gradually reveal the shape of the letters.
+
+The result is similar to viewing the Matrix through a dark plastic stencil.
+
+During the hottest part of the animation, the stencil interior becomes slightly brighter so the complete phrase can be read without filling the entire screen with additional rain.
+
+## Outline animation
+
+At peak heat, the perimeter of the message begins charging into view.
+
+The outline:
+
+1. Appears gradually instead of popping onto the screen.
+2. Uses a controlled set of characters such as `0`, `1`, `|`, and `:`.
+3. Progresses through the console intensity levels until it reaches the brightest highlight color.
+4. Holds briefly as a complete readable outline.
+5. Detaches when cooling begins.
+6. Breaks apart into independently falling characters.
+7. Changes into the normal Matrix alphabet after falling several rows.
+8. Continues downward until every outline character leaves the screen.
+
+This makes the message appear to form from the Matrix and then physically dissolve back into it.
+
+## Heat cycle
+
+The animation progresses through these phases:
 
 ```text
-MatrixStencil.sln
-src/
-  MatrixStencil.Core/       Platform-independent simulation and rendering
-  MatrixStencil.Console/    ANSI console host for Windows and Linux
-
-tests/
-  MatrixStencil.Core.Tests/ NUnit tests for glyphs, masks, layers, lifecycle, and stencil behavior
-```
-
-## Run
-
-```powershell
-dotnet restore
-dotnet test
-dotnet run --project src/MatrixStencil.Console
-```
-
-The best results come from a modern terminal with ANSI true-color support. Windows Terminal, current PowerShell terminals, and common Linux terminals work well.
-
-Controls:
-
-- `R`: restart the heat cycle
-- `Space`: pause or resume
-- `Q` or `Esc`: quit
-
-## Change the message
-
-Edit `Message` in `src/MatrixStencil.Console/Program.cs`:
-
-```csharp
-private const string Message = "Tony-Devs";
-```
-
-The `GlyphCatalog` stores every printable ASCII glyph from space (`U+0020`) through tilde (`U+007E`) as an 8-byte bitmap. Each byte is one glyph row, with the most significant bit representing the leftmost pixel.
-
-## Main tuning points
-
-- `HeatCycleOptions.Default`: phase timing
-- `MatrixLayerOptions.CreateFar/CreateMiddle/CreateForeground`: density, speed, trail length, and spawn rate
-- `ConsolePalette`: RGB colors for depth and highlight levels
-- `StencilMapper`: how each layer is visually demoted inside the message
+Cold hold
+Opening middle layer
+Opening foreground layer
+Hot hold
+Peak reveal
+Closing foreground layer
+Closing middle layer
+Cold hold
