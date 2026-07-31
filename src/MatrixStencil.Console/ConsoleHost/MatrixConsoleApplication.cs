@@ -93,9 +93,9 @@ internal sealed class MatrixConsoleApplication : IDisposable
                 peakRevealActive:
                     simulation.IsPeakReveal,
                 stencilEdgeHighlightsEnabled:
-                    !_outlineAnimation.SuppressStencilEdgeHighlights);
-
-            _outlineAnimation.Render(frame);
+                    !_outlineAnimation.SuppressStencilEdgeHighlights,
+                impactSink:
+                    _outlineAnimation);
 
             _outlineAnimation.Render(frame);
 

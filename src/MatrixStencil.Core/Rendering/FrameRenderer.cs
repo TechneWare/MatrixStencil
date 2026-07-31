@@ -22,7 +22,8 @@ public sealed class FrameRenderer
         MessageMask mask,
         int frameNumber,
         bool peakRevealActive = false,
-        bool stencilEdgeHighlightsEnabled = true)
+        bool stencilEdgeHighlightsEnabled = true,
+        IStencilImpactSink? impactSink = null)
     {
         ArgumentNullException.ThrowIfNull(layers);
         ArgumentNullException.ThrowIfNull(mask);
@@ -53,7 +54,8 @@ public sealed class FrameRenderer
                     priority,
                     frameNumber,
                     peakRevealActive,
-                    stencilEdgeHighlightsEnabled);
+                    stencilEdgeHighlightsEnabled,
+                    impactSink);
             }
         }
 
@@ -67,7 +69,8 @@ public sealed class FrameRenderer
         int priority,
         int frameNumber,
         bool peakRevealActive,
-        bool stencilEdgeHighlightsEnabled)
+        bool stencilEdgeHighlightsEnabled,
+        IStencilImpactSink? impactSink)
     {
         var baseHeadRow =
             (int)Math.Floor(stream.HeadRow);
@@ -105,7 +108,8 @@ public sealed class FrameRenderer
                 priority,
                 1.0 - fractionalRow,
                 peakRevealActive,
-                stencilEdgeHighlightsEnabled);
+                stencilEdgeHighlightsEnabled,
+                impactSink);
 
             RenderCharacterSample(
                 frame,
@@ -118,7 +122,8 @@ public sealed class FrameRenderer
                 priority,
                 fractionalRow,
                 peakRevealActive,
-                stencilEdgeHighlightsEnabled);
+                stencilEdgeHighlightsEnabled,
+                impactSink);
         }
     }
 
@@ -133,7 +138,8 @@ public sealed class FrameRenderer
         int priority,
         double weight,
         bool peakRevealActive,
-        bool stencilEdgeHighlightsEnabled)
+        bool stencilEdgeHighlightsEnabled,
+        IStencilImpactSink? impactSink)
     {
         if (x < 0 ||
             x >= frame.Width ||
@@ -155,14 +161,31 @@ public sealed class FrameRenderer
             return;
         }
 
+        var onStencilEdge =
+            mask.IsEdge(x, y);
+
+        var adjacentToStencilEdge =
+            mask.IsAdjacentToEdge(x, y);
+
+        // Capture the natural stream intensity before the stencil mapper
+        // promotes or demotes it.
+        if (onStencilEdge)
+        {
+            impactSink?.RegisterImpact(
+                new StencilImpact(
+                    x,
+                    y,
+                    intensity));
+        }
+
         intensity = _stencilMapper.Map(
             intensity,
             insideStencil:
                 mask.Contains(x, y),
             onStencilEdge:
-                mask.IsEdge(x, y),
+                onStencilEdge,
             adjacentToStencilEdge:
-                mask.IsAdjacentToEdge(x, y),
+                adjacentToStencilEdge,
             peakRevealActive:
                 peakRevealActive,
             stencilEdgeHighlightsEnabled:

@@ -4,10 +4,11 @@ using MatrixStencil.Core.Simulation;
 
 namespace MatrixStencil.Core.Animation;
 
-public sealed class StencilOutlineAnimation
+public sealed class StencilOutlineAnimation : IStencilImpactSink
 {
-    private static readonly MatrixIntensity[] ChargeLevels =
+    private static readonly MatrixIntensity[] EqualizationLevels =
     [
+        MatrixIntensity.None,
         MatrixIntensity.DeepShadow,
         MatrixIntensity.Far,
         MatrixIntensity.Muted,
@@ -18,10 +19,12 @@ public sealed class StencilOutlineAnimation
 
     private readonly StencilOutlineAnimationOptions _options;
     private readonly List<OutlineParticle> _particles = [];
+    private readonly Dictionary<int, OutlineParticle> _particlesByPosition = [];
 
-    private double _phaseElapsedSeconds;
+    private double _equalizationElapsedSeconds;
     private double _releaseElapsedSeconds;
     private int _cycleNumber;
+
     private int _maskWidth;
     private int _maskHeight;
     private int _maskLeft;
@@ -40,16 +43,65 @@ public sealed class StencilOutlineAnimation
     }
 
     public StencilOutlineState State { get; private set; } =
-        StencilOutlineState.Dormant;
+        StencilOutlineState.Cooling;
 
     public bool IsReleasing =>
         State == StencilOutlineState.Releasing;
 
+    /// <summary>
+    /// Once outline collection begins, this animation owns the stencil
+    /// perimeter. The normal renderer should stop adding temporary edge
+    /// promotions behind it.
+    /// </summary>
     public bool SuppressStencilEdgeHighlights =>
-        State != StencilOutlineState.Dormant;
+        State is not StencilOutlineState.Dormant;
 
     public int ParticleCount =>
         _particles.Count;
+
+    public void RegisterImpact(StencilImpact impact)
+    {
+        if (State is not StencilOutlineState.Collecting and
+            not StencilOutlineState.Equalizing)
+        {
+            return;
+        }
+
+        if (impact.Intensity == MatrixIntensity.None)
+        {
+            return;
+        }
+
+        if (impact.X < 0 ||
+            impact.X >= _maskWidth ||
+            impact.Y < 0 ||
+            impact.Y >= _maskHeight)
+        {
+            return;
+        }
+
+        var key = GetPositionKey(
+            impact.X,
+            impact.Y);
+
+        if (!_particlesByPosition.TryGetValue(
+            key,
+            out var particle))
+        {
+            return;
+        }
+
+        particle.HasCapturedImpact = true;
+
+        // A stronger impact promotes the stored pixel. A weaker impact
+        // never dims or resets it.
+        if (impact.Intensity >
+            particle.CapturedIntensity)
+        {
+            particle.CapturedIntensity =
+                impact.Intensity;
+        }
+    }
 
     public void Update(
         HeatPhase phase,
@@ -64,30 +116,45 @@ public sealed class StencilOutlineAnimation
                 nameof(elapsed));
         }
 
-        if (phase == HeatPhase.PeakReveal)
+        if (IsCollectionPhase(phase))
         {
-            if (!MatchesMask(mask) ||
-                State == StencilOutlineState.Dormant)
+            if (State is
+                    StencilOutlineState.Dormant or
+                    StencilOutlineState.Cooling ||
+                !MatchesMask(mask))
             {
-                CaptureOutline(mask);
-            }
-
-            if (State == StencilOutlineState.Charging)
-            {
-                _phaseElapsedSeconds +=
-                    elapsed.TotalSeconds;
-
-                if (IsFullyCharged())
-                {
-                    State = StencilOutlineState.Anchored;
-                }
+                InitializeOutline(mask);
             }
 
             return;
         }
 
-        if (State == StencilOutlineState.Charging ||
-            State == StencilOutlineState.Anchored)
+        if (phase == HeatPhase.PeakReveal)
+        {
+            if (State is
+                    StencilOutlineState.Dormant or
+                    StencilOutlineState.Cooling ||
+                !MatchesMask(mask))
+            {
+                InitializeOutline(mask);
+            }
+
+            if (State == StencilOutlineState.Collecting)
+            {
+                BeginEqualization();
+            }
+
+            if (State == StencilOutlineState.Equalizing)
+            {
+                AdvanceEqualization(elapsed);
+            }
+
+            return;
+        }
+
+        if (State is StencilOutlineState.Collecting or
+            StencilOutlineState.Equalizing or
+            StencilOutlineState.Anchored)
         {
             BeginRelease();
         }
@@ -102,54 +169,67 @@ public sealed class StencilOutlineAnimation
     {
         ArgumentNullException.ThrowIfNull(frame);
 
-        if (State == StencilOutlineState.Dormant)
+        switch (State)
         {
-            return;
-        }
+            case StencilOutlineState.Dormant:
+            case StencilOutlineState.Cooling:
+                return;
 
-        foreach (var particle in _particles)
-        {
-            switch (State)
-            {
-                case StencilOutlineState.Charging:
-                    RenderChargingParticle(
-                        frame,
-                        particle);
-                    break;
+            case StencilOutlineState.Collecting:
+                RenderCollectedImpacts(frame);
+                return;
 
-                case StencilOutlineState.Anchored:
-                    RenderAnchoredParticle(
-                        frame,
-                        particle);
-                    break;
+            case StencilOutlineState.Equalizing:
+                RenderEqualizingOutline(frame);
+                return;
 
-                case StencilOutlineState.Releasing:
-                    RenderReleasedParticle(
-                        frame,
-                        particle);
-                    break;
-            }
+            case StencilOutlineState.Anchored:
+                RenderAnchoredOutline(frame);
+                return;
+
+            case StencilOutlineState.Releasing:
+                RenderReleasedOutline(frame);
+                return;
+
+            default:
+                throw new ArgumentOutOfRangeException();
         }
     }
 
     public void Reset()
     {
         _particles.Clear();
-        _phaseElapsedSeconds = 0;
+        _particlesByPosition.Clear();
+
+        _equalizationElapsedSeconds = 0;
         _releaseElapsedSeconds = 0;
+
         _maskWidth = 0;
         _maskHeight = 0;
         _maskLeft = 0;
         _maskTop = 0;
         _maskRight = 0;
         _maskBottom = 0;
-        State = StencilOutlineState.Dormant;
+
+        State = StencilOutlineState.Cooling;
     }
 
-    private void CaptureOutline(MessageMask mask)
+    private static bool IsCollectionPhase(
+        HeatPhase phase)
+    {
+        return phase is
+            HeatPhase.OpeningMiddle or
+            HeatPhase.OpeningForeground or
+            HeatPhase.HotHold;
+    }
+
+    private void InitializeOutline(
+        MessageMask mask)
     {
         _particles.Clear();
-        _phaseElapsedSeconds = 0;
+        _particlesByPosition.Clear();
+
+        _equalizationElapsedSeconds = 0;
         _releaseElapsedSeconds = 0;
         _cycleNumber++;
 
@@ -160,30 +240,36 @@ public sealed class StencilOutlineAnimation
         _maskRight = mask.Right;
         _maskBottom = mask.Bottom;
 
-        for (var y = mask.Top; y < mask.Bottom; y++)
+        for (var y = mask.Top;
+             y < mask.Bottom;
+             y++)
         {
-            for (var x = mask.Left; x < mask.Right; x++)
+            for (var x = mask.Left;
+                 x < mask.Right;
+                 x++)
             {
                 if (!mask.IsEdge(x, y))
                 {
                     continue;
                 }
 
-                _particles.Add(
-                    CreateParticle(
-                        mask,
-                        x,
-                        y));
+                var particle =
+                    CreateParticle(x, y);
+
+                _particles.Add(particle);
+
+                _particlesByPosition.Add(
+                    GetPositionKey(x, y),
+                    particle);
             }
         }
 
         State = _particles.Count > 0
-            ? StencilOutlineState.Charging
-            : StencilOutlineState.Dormant;
+            ? StencilOutlineState.Collecting
+            : StencilOutlineState.Cooling;
     }
 
     private OutlineParticle CreateParticle(
-        MessageMask mask,
         int x,
         int y)
     {
@@ -194,38 +280,15 @@ public sealed class StencilOutlineAnimation
                     (uint)(x * 374_761_393) ^
                     (uint)(y * 668_265_263)));
 
-        var activationHash =
-            MatrixCharacterGenerator.Hash(
-                baseHash ^ 0x9E37_79B9u);
-
         var releaseHash =
             MatrixCharacterGenerator.Hash(
-                baseHash ^ 0x85EB_CA6Bu);
+                baseHash ^
+                0x9E37_79B9u);
 
         var speedHash =
             MatrixCharacterGenerator.Hash(
-                baseHash ^ 0xC2B2_AE35u);
-
-        var rowSpan =
-            Math.Max(
-                1,
-                mask.Bottom - mask.Top - 1);
-
-        var normalizedY =
-            (y - mask.Top) /
-            (double)rowSpan;
-
-        var rowBias =
-            normalizedY * 0.35;
-
-        var activationDelay =
-            Math.Min(
-                _options.MaximumActivationDelaySeconds,
-                rowBias +
-                Interpolate(
-                    _options.MinimumActivationDelaySeconds,
-                    _options.MaximumActivationDelaySeconds,
-                    ToUnitInterval(activationHash)));
+                baseHash ^
+                0x85EB_CA6Bu);
 
         var releaseDelay =
             Interpolate(
@@ -239,14 +302,13 @@ public sealed class StencilOutlineAnimation
                 _options.MaximumFallSpeedRowsPerSecond,
                 ToUnitInterval(speedHash));
 
-        var character =
+        var outlineCharacter =
             PickOutlineCharacter(baseHash);
 
         return new OutlineParticle(
             x,
             y,
-            character,
-            activationDelay,
+            outlineCharacter,
             releaseDelay,
             speed,
             unchecked((int)baseHash));
@@ -255,61 +317,88 @@ public sealed class StencilOutlineAnimation
     private char PickOutlineCharacter(uint hash)
     {
         var index =
-            (int)(hash %
-                  (uint)_options.OutlineCharacters.Length);
+            (int)(
+                hash %
+                (uint)_options.OutlineCharacters.Length);
 
         return _options.OutlineCharacters[index];
     }
 
-    private void RenderChargingParticle(
-        MatrixFrame frame,
-        OutlineParticle particle)
+    private void BeginEqualization()
     {
-        if (_phaseElapsedSeconds <
-            particle.ActivationDelaySeconds)
+        _equalizationElapsedSeconds = 0;
+        State = StencilOutlineState.Equalizing;
+    }
+
+    private void AdvanceEqualization(
+        TimeSpan elapsed)
+    {
+        _equalizationElapsedSeconds +=
+            elapsed.TotalSeconds;
+
+        if (_equalizationElapsedSeconds >=
+            _options.EqualizationDurationSeconds)
         {
-            return;
+            State = StencilOutlineState.Anchored;
         }
-
-        var localElapsed =
-            _phaseElapsedSeconds -
-            particle.ActivationDelaySeconds;
-
-        var chargeProgress =
-            Math.Clamp(
-                localElapsed / _options.ChargeDurationSeconds,
-                0,
-                1);
-
-        var intensity =
-            GetChargingIntensity(chargeProgress);
-
-        RenderAtRow(
-            frame,
-            particle.Column,
-            particle.StartRow,
-            particle.OutlineCharacter,
-            intensity);
     }
 
-    private void RenderAnchoredParticle(
-        MatrixFrame frame,
-        OutlineParticle particle)
+    private void RenderCollectedImpacts(
+        MatrixFrame frame)
     {
-        RenderAtRow(
-            frame,
-            particle.Column,
-            particle.StartRow,
-            particle.OutlineCharacter,
-            MatrixIntensity.Highlight);
+        foreach (var particle in _particles)
+        {
+            if (!particle.HasCapturedImpact)
+            {
+                continue;
+            }
+
+            RenderAtRow(
+                frame,
+                particle.Column,
+                particle.StartRow,
+                particle.OutlineCharacter,
+                particle.CapturedIntensity);
+        }
     }
 
-    private void RenderReleasedParticle(
-        MatrixFrame frame,
-        OutlineParticle particle)
+    private void RenderEqualizingOutline(
+        MatrixFrame frame)
     {
-        if (_releaseElapsedSeconds <
-            particle.ReleaseDelaySeconds)
+        var revealFloor =
+            GetEqualizationFloor();
+
+        foreach (var particle in _particles)
+        {
+            var capturedIntensity =
+                particle.HasCapturedImpact
+                    ? particle.CapturedIntensity
+                    : MatrixIntensity.None;
+
+            var effectiveIntensity =
+                Max(
+                    capturedIntensity,
+                    revealFloor);
+
+            if (effectiveIntensity ==
+                MatrixIntensity.None)
+            {
+                continue;
+            }
+
+            RenderAtRow(
+                frame,
+                particle.Column,
+                particle.StartRow,
+                particle.OutlineCharacter,
+                effectiveIntensity);
+        }
+    }
+
+    private void RenderAnchoredOutline(
+        MatrixFrame frame)
+    {
+        foreach (var particle in _particles)
         {
             RenderAtRow(
                 frame,
@@ -317,52 +406,103 @@ public sealed class StencilOutlineAnimation
                 particle.StartRow,
                 particle.OutlineCharacter,
                 MatrixIntensity.Highlight);
-
-            return;
         }
+    }
 
-        var fallDistance =
-            particle.CurrentRow -
-            particle.StartRow;
-
-        var intensity =
-            GetReleasedIntensity(fallDistance);
-
-        var character =
-            fallDistance < _options.MorphToMatrixAfterRows
-                ? particle.OutlineCharacter
-                : MatrixCharacterGenerator.Pick(
-                    particle.Seed,
-                    frameNumber:
-                        (int)Math.Floor(
-                            (fallDistance - _options.MorphToMatrixAfterRows) * 2.0),
-                    trailIndex: 0,
-                    MatrixLayerKind.Foreground);
-
-        RenderAtRow(
-            frame,
-            particle.Column,
-            particle.CurrentRow,
-            character,
-            intensity);
-
-        var ghostIntensity =
-            DemoteOneLevel(intensity);
-
-        if (ghostIntensity != MatrixIntensity.None)
+    private void RenderReleasedOutline(
+        MatrixFrame frame)
+    {
+        foreach (var particle in _particles)
         {
+            if (_releaseElapsedSeconds <
+                particle.ReleaseDelaySeconds)
+            {
+                RenderAtRow(
+                    frame,
+                    particle.Column,
+                    particle.StartRow,
+                    particle.OutlineCharacter,
+                    MatrixIntensity.Highlight);
+
+                continue;
+            }
+
+            var fallDistance =
+                particle.CurrentRow -
+                particle.StartRow;
+
+            var intensity =
+                GetReleasedIntensity(
+                    fallDistance);
+
+            var character =
+                fallDistance <
+                _options.MorphToMatrixAfterRows
+                    ? particle.OutlineCharacter
+                    : MatrixCharacterGenerator.Pick(
+                        particle.Seed,
+                        frameNumber:
+                            (int)Math.Floor(
+                                (fallDistance -
+                                 _options.MorphToMatrixAfterRows) *
+                                2.0),
+                        trailIndex: 0,
+                        MatrixLayerKind.Foreground);
+
             RenderAtRow(
                 frame,
                 particle.Column,
-                particle.CurrentRow - 1.0,
+                particle.CurrentRow,
                 character,
-                ghostIntensity);
+                intensity);
+
+            var ghostIntensity =
+                DemoteOneLevel(intensity);
+
+            if (ghostIntensity !=
+                MatrixIntensity.None)
+            {
+                RenderAtRow(
+                    frame,
+                    particle.Column,
+                    particle.CurrentRow - 1.0,
+                    character,
+                    ghostIntensity);
+            }
         }
+    }
+
+    private MatrixIntensity GetEqualizationFloor()
+    {
+        var progress =
+            Math.Clamp(
+                _equalizationElapsedSeconds /
+                _options.EqualizationDurationSeconds,
+                0,
+                1);
+
+        var maximumIndex =
+            EqualizationLevels.Length - 1;
+
+        var levelIndex =
+            Math.Min(
+                maximumIndex,
+                (int)Math.Floor(
+                    progress * maximumIndex));
+
+        return EqualizationLevels[levelIndex];
     }
 
     private void BeginRelease()
     {
         _releaseElapsedSeconds = 0;
+
+        foreach (var particle in _particles)
+        {
+            particle.CurrentRow =
+                particle.StartRow;
+        }
+
         State = StencilOutlineState.Releasing;
     }
 
@@ -410,8 +550,12 @@ public sealed class StencilOutlineAnimation
 
         if (_particles.Count == 0)
         {
-            State = StencilOutlineState.Dormant;
+            _particlesByPosition.Clear();
             _releaseElapsedSeconds = 0;
+
+            // Keep the stencil disabled for the rest of cooling and the
+            // following cold hold. OpeningMiddle starts the next collection.
+            State = StencilOutlineState.Cooling;
         }
     }
 
@@ -481,32 +625,6 @@ public sealed class StencilOutlineAnimation
                 _options.RenderPriority));
     }
 
-    private bool IsFullyCharged()
-    {
-        var threshold =
-            _particles.Count == 0
-                ? 0
-                : _particles.Max(
-                    static particle =>
-                        particle.ActivationDelaySeconds) +
-                  _options.ChargeDurationSeconds;
-
-        return _phaseElapsedSeconds >= threshold;
-    }
-
-    private static MatrixIntensity GetChargingIntensity(
-        double progress)
-    {
-        var index =
-            Math.Clamp(
-                (int)Math.Floor(
-                    progress * ChargeLevels.Length),
-                0,
-                ChargeLevels.Length - 1);
-
-        return ChargeLevels[index];
-    }
-
     private MatrixIntensity GetReleasedIntensity(
         double fallDistance)
     {
@@ -563,7 +681,7 @@ public sealed class StencilOutlineAnimation
     {
         return Demote(
             intensity,
-            1);
+            levels: 1);
     }
 
     private static MatrixIntensity Demote(
@@ -580,7 +698,24 @@ public sealed class StencilOutlineAnimation
             : (MatrixIntensity)value;
     }
 
-    private bool MatchesMask(MessageMask mask)
+    private static MatrixIntensity Max(
+        MatrixIntensity first,
+        MatrixIntensity second)
+    {
+        return first >= second
+            ? first
+            : second;
+    }
+
+    private int GetPositionKey(
+        int x,
+        int y)
+    {
+        return (y * _maskWidth) + x;
+    }
+
+    private bool MatchesMask(
+        MessageMask mask)
     {
         return
             mask.Width == _maskWidth &&
@@ -600,7 +735,8 @@ public sealed class StencilOutlineAnimation
                ((maximum - minimum) * amount);
     }
 
-    private static double ToUnitInterval(uint value)
+    private static double ToUnitInterval(
+        uint value)
     {
         return value /
                (double)uint.MaxValue;
@@ -608,22 +744,12 @@ public sealed class StencilOutlineAnimation
 
     private void ValidateOptions()
     {
-        if (_options.MinimumActivationDelaySeconds < 0 ||
-            _options.MaximumActivationDelaySeconds <
-            _options.MinimumActivationDelaySeconds)
+        if (_options.EqualizationDurationSeconds <= 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(
                     StencilOutlineAnimationOptions
-                        .MaximumActivationDelaySeconds));
-        }
-
-        if (_options.ChargeDurationSeconds <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(
-                    StencilOutlineAnimationOptions
-                        .ChargeDurationSeconds));
+                        .EqualizationDurationSeconds));
         }
 
         if (_options.MinimumReleaseDelaySeconds < 0 ||
@@ -662,7 +788,6 @@ public sealed class StencilOutlineAnimation
             int column,
             int startRow,
             char outlineCharacter,
-            double activationDelaySeconds,
             double releaseDelaySeconds,
             double speedRowsPerSecond,
             int seed)
@@ -671,9 +796,10 @@ public sealed class StencilOutlineAnimation
             StartRow = startRow;
             CurrentRow = startRow;
             OutlineCharacter = outlineCharacter;
-            ActivationDelaySeconds = activationDelaySeconds;
-            ReleaseDelaySeconds = releaseDelaySeconds;
-            SpeedRowsPerSecond = speedRowsPerSecond;
+            ReleaseDelaySeconds =
+                releaseDelaySeconds;
+            SpeedRowsPerSecond =
+                speedRowsPerSecond;
             Seed = seed;
         }
 
@@ -685,12 +811,15 @@ public sealed class StencilOutlineAnimation
 
         public char OutlineCharacter { get; }
 
-        public double ActivationDelaySeconds { get; }
-
         public double ReleaseDelaySeconds { get; }
 
         public double SpeedRowsPerSecond { get; }
 
         public int Seed { get; }
+
+        public bool HasCapturedImpact { get; set; }
+
+        public MatrixIntensity CapturedIntensity { get; set; } =
+            MatrixIntensity.None;
     }
 }

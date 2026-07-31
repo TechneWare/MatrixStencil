@@ -3,7 +3,9 @@
 public enum StencilOutlineState
 {
     Dormant,
-    Charging,
+    Cooling,
+    Collecting,
+    Equalizing,
     Anchored,
     Releasing
 }
