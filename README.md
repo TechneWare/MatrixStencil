@@ -102,3 +102,178 @@ Peak reveal
 Closing foreground layer
 Closing middle layer
 Cold hold
+````
+
+## Build and run
+
+Matrix Stencil can be built and run on Windows, Linux, macOS, and ARM devices such as a Raspberry Pi.
+
+### Windows
+
+From the solution directory:
+
+```powershell
+dotnet restore
+dotnet build -c Release
+dotnet test -c Release
+
+dotnet run `
+    --project src/MatrixStencil.Console/MatrixStencil.Console.csproj `
+    -c Release
+````
+
+### Linux
+
+The .NET 8 SDK must be installed to build the project from source.
+
+Confirm the SDK is available:
+
+```bash
+dotnet --info
+```
+
+From the cloned repository:
+
+```bash
+cd MatrixStencil
+
+dotnet restore
+dotnet build -c Release
+dotnet test -c Release
+
+dotnet run \
+    --project src/MatrixStencil.Console/MatrixStencil.Console.csproj \
+    -c Release
+```
+
+The application uses ANSI escape sequences for color, cursor movement, and differential screen updates. Most modern Linux terminals support these features directly.
+
+It has been tested successfully through an SSH session using PuTTY on a Raspberry Pi.
+
+### Install the .NET 8 SDK for the current Linux user
+
+When `dotnet` is not already installed, the Microsoft install script can install the SDK without changing system packages:
+
+```bash
+sudo apt update
+sudo apt install -y curl ca-certificates
+
+curl -sSL https://dot.net/v1/dotnet-install.sh \
+    -o /tmp/dotnet-install.sh
+
+chmod +x /tmp/dotnet-install.sh
+
+/tmp/dotnet-install.sh \
+    --channel 8.0 \
+    --install-dir "$HOME/.dotnet"
+```
+
+Add the installation to the shell environment:
+
+```bash
+echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> ~/.bashrc
+echo 'export PATH="$PATH:$HOME/.dotnet"' >> ~/.bashrc
+
+source ~/.bashrc
+```
+
+Verify the installation:
+
+```bash
+dotnet --info
+```
+
+### Raspberry Pi
+
+Check the operating system architecture:
+
+```bash
+uname -m
+```
+
+Common results are:
+
+```text
+aarch64    64-bit Raspberry Pi OS
+armv7l     32-bit Raspberry Pi OS
+```
+
+Once the .NET 8 SDK is installed, the normal Linux build commands work:
+
+```bash
+git clone https://github.com/YOUR-USERNAME/MatrixStencil.git
+cd MatrixStencil
+
+dotnet restore
+dotnet test -c Release
+
+dotnet run \
+    --project src/MatrixStencil.Console/MatrixStencil.Console.csproj \
+    -c Release
+```
+
+Running through SSH is supported. The animation is rendered by the local terminal, while the application runs on the Raspberry Pi.
+
+### Publish a standalone Linux executable
+
+A self-contained publish includes the .NET runtime, so the target computer does not need .NET installed.
+
+For 64-bit Linux:
+
+```bash
+dotnet publish \
+    src/MatrixStencil.Console/MatrixStencil.Console.csproj \
+    -c Release \
+    -r linux-x64 \
+    --self-contained true \
+    -p:PublishSingleFile=true \
+    -o artifacts/linux-x64
+```
+
+For a 64-bit Raspberry Pi:
+
+```bash
+dotnet publish \
+    src/MatrixStencil.Console/MatrixStencil.Console.csproj \
+    -c Release \
+    -r linux-arm64 \
+    --self-contained true \
+    -p:PublishSingleFile=true \
+    -o artifacts/linux-arm64
+```
+
+For a 32-bit Raspberry Pi:
+
+```bash
+dotnet publish \
+    src/MatrixStencil.Console/MatrixStencil.Console.csproj \
+    -c Release \
+    -r linux-arm \
+    --self-contained true \
+    -p:PublishSingleFile=true \
+    -o artifacts/linux-arm
+```
+
+After copying the published executable to Linux, make it executable and run it:
+
+```bash
+chmod +x MatrixStencil.Console
+./MatrixStencil.Console
+```
+
+### Terminal recommendations
+
+For the best results:
+
+* Use a terminal with ANSI true-color support.
+* Give the terminal enough width for the complete message.
+* Avoid redirecting output to a file or pipe.
+* Use a monospace terminal font.
+* Run at the terminal's normal zoom level before adjusting the animation settings.
+
+Known compatible terminal environments include:
+
+* Windows Terminal
+* PuTTY
+* Common Linux desktop terminals
+* SSH sessions connected to Linux or Raspberry Pi
