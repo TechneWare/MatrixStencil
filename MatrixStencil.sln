@@ -1,12 +1,19 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.6.11806.211 stable
+VisualStudioVersion = 18.6.11806.211
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MatrixStencil.Core", "src\MatrixStencil.Core\MatrixStencil.Core.csproj", "{BC5013D0-C6CD-4D88-BE3A-7952D73762E5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MatrixStencil.Console", "src\MatrixStencil.Console\MatrixStencil.Console.csproj", "{D8D9E02E-6371-413D-A1D5-EA8E58E83D81}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MatrixStencil.Core.Tests", "tests\MatrixStencil.Core.Tests\MatrixStencil.Core.Tests.csproj", "{230BE67F-C558-4475-8DB5-2184778B523B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionItems", "{F0DF841A-3EF8-40C4-A6CC-27A8DEF07150}"
+	ProjectSection(SolutionItems) = preProject
+		DejaVu-Fonts-LICENSE.txt = DejaVu-Fonts-LICENSE.txt
+		README.md = README.md
+		THIRD-PARTY-NOTICES.md = THIRD-PARTY-NOTICES.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,5 +36,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D32CE04A-7741-42BD-B5A1-D310B8D80BAA}
 	EndGlobalSection
 EndGlobal
