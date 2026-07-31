@@ -2,7 +2,7 @@
 
 A reusable .NET 8 console animation that renders layered Matrix-style rain around a hidden message stencil.
 
-The current message is `HELLO WORLD`, an inside joke, but the renderer supports any short message made from printable ASCII characters.
+The current message is `HELLO WORLD`, but the renderer supports any short message made from printable ASCII characters.
 
 ## How it works
 
