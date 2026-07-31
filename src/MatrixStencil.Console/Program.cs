@@ -4,7 +4,7 @@ namespace MatrixStencil.ConsoleApp;
 
 internal static class Program
 {
-    private const string Message = "HELLO WORLD"; // "Tony-Devs";
+    private const string Message = "HELLO WORLD";
 
     private static int Main()
     {

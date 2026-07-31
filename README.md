@@ -4,6 +4,10 @@ A reusable .NET 8 console animation that renders layered Matrix-style rain aroun
 
 The current message is `HELLO WORLD`, but the renderer supports any short message made from printable ASCII characters.
 
+## Demo
+
+![Matrix Stencil animation](media/matrix-stencil-demo.gif)
+
 ## How it works
 
 The animation runs as an endless heat cycle.
