@@ -15,4 +15,4 @@ under the DejaVu Fonts license.
 
 Copyright notices and license terms for DejaVu Fonts are included in:
 
-`THIRD-PARTY-LICENSES/DejaVu-Fonts-LICENSE.txt`
+`DejaVu-Fonts-LICENSE.txt`
